@@ -1,13 +1,16 @@
-"""Script for running a simple storm surge example with continential shelf
+"""Script for running a storm surge inundation scenario for Cairns, QLD Australia.
 
 Source data such as elevation and boundary data is assumed to be available in
 directories specified by project.py
 The output sww file is stored in directory named after the scenario, i.e
-pressure_cell or wind_stress or pressure_and_wind
+pressure_cell or wind_shear or pressure_and_wind
 
 The scenario is defined by a triangular mesh created from project.polygon,
 and the elevation data.
 
+Geoscience Australia, 2004-present
+
+Modified:
 Stephen Roberts, 2022-present
 """
 
@@ -15,10 +18,13 @@ Stephen Roberts, 2022-present
 # Import necessary modules
 #------------------------------------------------------------------------------
 # Standard modules
+import os
 import time
+import sys
 
 # Related major packages
 import anuga
+import numpy
 
 
 # Application specific imports
@@ -34,38 +40,17 @@ verbose = args.verbose
 if anuga.myid == 0:
 
     #------------------------------------------------------------------------------
-    # Preparation of topographic data
-    # Convert ASC 2 DEM 2 PTS using source data and store result in source data
+    # Preparation of topographic data, extract from zip file
     #------------------------------------------------------------------------------
     # Unzip asc from zip file
     import zipfile as zf
     if project.verbose: print ('Reading ASC from cairns.zip')
     zf.ZipFile(anuga.join(project.data_dir,project.name_stem+'.zip')).extract(project.name_stem+'.asc')
 
-
-    # # Create DEM from asc data
-    # anuga.asc2dem(project.name_stem+'.asc', use_cache=project.cache, 
-    #               verbose=project.verbose)
-
-    # # Create pts file for onshore DEM
-    # anuga.dem2pts(project.name_stem+'.dem', use_cache=project.cache, 
-    #               verbose=project.verbose)
-
     #------------------------------------------------------------------------------
-    # Create the triangular mesh and domain based on
-    # overall clipping polygon with a tagged
-    # boundary and interior regions as defined in project.py
+    # Create a simple rectangular domain
     #------------------------------------------------------------------------------
-    domain = anuga.create_domain_from_regions(project.bounding_polygon,
-                                        boundary_tags={'top': [0],
-                                                       'ocean_east': [1],
-                                                       'bottom': [2],
-                                                       'onshore': [3]},
-                                        maximum_triangle_area=project.default_res,
-                                        mesh_filename=project.meshname,
-                                        interior_regions=project.interior_regions,
-                                        use_cache=project.cache,
-                                        verbose=project.verbose)
+    domain = anuga.rectangular_cross_domain(m=100, n=400, len1=400_000, len2=200_000)
 
     # Print some stats about mesh and domain
     print ('Number of triangles = ', len(domain))
@@ -76,7 +61,7 @@ if anuga.myid == 0:
     #------------------------------------------------------------------------------
     # Setup parameters of computational domain
     #------------------------------------------------------------------------------
-    domain.set_name('cairns_' + project.scenario) # Name of sww file
+    domain.set_name('simple_' + project.scenario) # Name of sww file
     domain.set_datadir('.')                       # Store sww output here
     domain.set_minimum_storable_height(0.01)      # Store only depth > 1cm
     domain.set_flow_algorithm(alg)
@@ -88,6 +73,22 @@ if anuga.myid == 0:
     tide = project.tide
     domain.set_quantity('stage', project.tide)
     domain.set_quantity('friction', 0.0)
+
+
+
+    #------------------------------------------------------------------------------
+    # Setup elevation
+    #------------------------------------------------------------------------------
+    def topography(x,y):
+
+        z = -100.0*numpy.ones_like(x)
+
+        channel = np.logical_and(y>5,y<15)
+
+        z = np.where(np.logical_and(channel,x<10), x/300, z)
+        z = np.where(np.logical_and(channel,x>20), x/300, z)
+
+        z = numpy.where()
 
 
     domain.set_quantity('elevation',
