@@ -34,22 +34,13 @@ verbose = args.verbose
 if anuga.myid == 0:
 
     #------------------------------------------------------------------------------
-    # Preparation of topographic data
-    # Convert ASC 2 DEM 2 PTS using source data and store result in source data
+    # Preparation of topographic data by extracting file from zipfile
     #------------------------------------------------------------------------------
     # Unzip asc from zip file
     import zipfile as zf
-    if project.verbose: print ('Reading ASC from cairns.zip')
+    if project.verbose: print ('Reading ASC and PRJ files from cairns.zip')
     zf.ZipFile(anuga.join(project.data_dir,project.name_stem+'.zip')).extract(project.name_stem+'.asc')
-
-
-    # # Create DEM from asc data
-    # anuga.asc2dem(project.name_stem+'.asc', use_cache=project.cache, 
-    #               verbose=project.verbose)
-
-    # # Create pts file for onshore DEM
-    # anuga.dem2pts(project.name_stem+'.dem', use_cache=project.cache, 
-    #               verbose=project.verbose)
+    zf.ZipFile(anuga.join(project.data_dir,project.name_stem+'.zip')).extract(project.name_stem+'.prj')
 
     #------------------------------------------------------------------------------
     # Create the triangular mesh and domain based on

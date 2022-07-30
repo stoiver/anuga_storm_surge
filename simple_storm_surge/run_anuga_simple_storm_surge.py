@@ -24,7 +24,7 @@ import sys
 
 # Related major packages
 import anuga
-import numpy
+import numpy as np
 
 
 # Application specific imports
@@ -40,17 +40,9 @@ verbose = args.verbose
 if anuga.myid == 0:
 
     #------------------------------------------------------------------------------
-    # Preparation of topographic data, extract from zip file
-    #------------------------------------------------------------------------------
-    # Unzip asc from zip file
-    import zipfile as zf
-    if project.verbose: print ('Reading ASC from cairns.zip')
-    zf.ZipFile(anuga.join(project.data_dir,project.name_stem+'.zip')).extract(project.name_stem+'.asc')
-
-    #------------------------------------------------------------------------------
     # Create a simple rectangular domain
     #------------------------------------------------------------------------------
-    domain = anuga.rectangular_cross_domain(m=100, n=400, len1=400_000, len2=200_000)
+    domain = anuga.rectangular_cross_domain(m=2*project.rf, n=4*project.rf, len1=project.len1, len2=project.len2)
 
     # Print some stats about mesh and domain
     print ('Number of triangles = ', len(domain))
@@ -74,31 +66,23 @@ if anuga.myid == 0:
     domain.set_quantity('stage', project.tide)
     domain.set_quantity('friction', 0.0)
 
-
-
     #------------------------------------------------------------------------------
     # Setup elevation
     #------------------------------------------------------------------------------
     def topography(x,y):
 
-        z = -100.0*numpy.ones_like(x)
+        km = 1000.0
+        continential_shelf = -10.0
+        ocean = -1000.0
 
-        channel = np.logical_and(y>5,y<15)
+        z = (x-100*km)/(100*km)*ocean
 
-        z = np.where(np.logical_and(channel,x<10), x/300, z)
-        z = np.where(np.logical_and(channel,x>20), x/300, z)
+        z = np.minimum(z, continential_shelf)
+        z = np.maximum(z, ocean)
 
-        z = numpy.where()
+        return z
 
-
-    domain.set_quantity('elevation',
-                        filename=project.name_stem + '.asc',
-                        use_cache=project.cache,
-                        verbose=project.verbose,
-                        )
-
-
-
+    domain.set_quantity('elevation', topography, verbose=project.verbose)
 else:
     domain = None
 
@@ -120,8 +104,6 @@ if project.scenario == 'pressure_cell' or project.scenario == 'pressure_and_wind
     def pressure_cell(t,x,y):
         import numpy as np
 
-
-
         x0, y0 = project.pressure_cell_center
         r = project.pressure_cell_radius
         maxp = project.pressure_cell_max
@@ -130,35 +112,49 @@ if project.scenario == 'pressure_cell' or project.scenario == 'pressure_and_wind
         x = np.array(x)
         y = np.array(y)
 
-        #print('minx',np.min(x))
-        #print('maxx',np.max(x))
-        #print('miny',np.min(y))
-        #print('maxy',np.max(y))
-
-        # pressure cell in atms
+          # pressure cell in atms
         p = maxp - (maxp-minp)*np.exp( -((x-x0)**2 + (y-y0)**2)/r**2 ) 
 
-        # convert to pascals 1 atm = 101325 pascals
+        # convert to pascals, 1 atm = 101325 pascals
         p = p*101325
-
-        # print('x', x)
-        # print('y', y)
-        # print('p', p)
-        # print('len(p)', len(p))
 
         p = p.reshape((1,-1))
 
-        #print('p shape', p.shape)
-
         return p
 
-    
-    
+    def exact_stage(x,y):
+
+        from anuga.config import rho_w
+        from anuga import g
+        maxp = project.pressure_cell_max*101325
+        minp = project.pressure_cell_min*101325
+
+
+        p = pressure_cell(0.0, x,y)
+
+        p = p.flatten()
+
+        print(x.shape, p.shape)
+
+        dp = maxp - p
+
+        print(np.max(dp))
+        print(np.min(dp))
+
+        # g h grad(w)  =  - 1/ rho_w  h grad(p)
+
+        w = 1/(rho_w*g) * dp
+
+
+
+        return w
+
+    domain.set_quantity('stage', exact_stage)
     
     from anuga.operators.barometric_pressure import Barometric_pressure_operator
     Barometric_pressure_operator(domain, pressure_cell, use_coordinates=True)
     
-    #from anuga.shallow_water.forcing import Barometric_pressure
+    from anuga.shallow_water.forcing import Barometric_pressure
     #P = Barometric_pressure(pressure_cell, use_coordinates=True)
     #domain.forcing_terms.append(P)
 
@@ -176,7 +172,7 @@ if project.scenario == 'wind_stress' or project.scenario == 'pressure_and_wind':
         y = np.array(y)
 
         # magnitude of wind in km/hr
-        s = 300*np.ones_like(x)
+        s = 100*np.ones_like(x)
 
         # change to m/s
         s = s * 1000/3600
@@ -203,19 +199,12 @@ if project.scenario == 'wind_stress' or project.scenario == 'pressure_and_wind':
 #------------------------------------------------------------------------------
 print ('Available boundary tags', domain.get_boundary_tags())
 
-Bd = anuga.Dirichlet_boundary([project.tide, 0, 0]) # Mean water level
-Bs = anuga.Transmissive_stage_zero_momentum_boundary(domain) # Neutral boundary
+Br = anuga.Reflective_boundary(domain)
 
-# Set to tide
-Bw = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
-                    domain=domain, 
-                    function=lambda t: [project.tide, 0, 0])
-
-domain.set_boundary({'ocean_east': Bw,
-                        'bottom': Bw,
-                        'onshore': Bw,
-                        'top': Bw})
-
+domain.set_boundary({'top': Br,
+                     'bottom': Br,
+                     'left': Br,
+                     'right': Br})
 
 #------------------------------------------------------------------------------
 # Evolve system through time
